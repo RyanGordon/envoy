@@ -23,6 +23,19 @@ public:
   }
 };
 
+class SourceIpPortHashMethod : public HashPolicyImpl::HashMethod {
+public:
+  absl::optional<uint64_t>
+  evaluate(const Network::Address::Instance& downstream_addr) const override {
+    if (downstream_addr.ip()) {
+      ASSERT(!downstream_addr.asString().empty());
+      return HashUtil::xxHash64(downstream_addr.asString());
+    }
+
+    return absl::nullopt;
+  }
+};
+
 class KeyHashMethod : public HashPolicyImpl::HashMethod {
 public:
   explicit KeyHashMethod(const std::string& key) : hash_{HashUtil::xxHash64(key)} {
@@ -45,6 +58,9 @@ HashPolicyImpl::HashPolicyImpl(
   switch (hash_policies[0]->policy_specifier_case()) {
   case UdpProxyConfig::HashPolicy::PolicySpecifierCase::kSourceIp:
     hash_impl_ = std::make_unique<SourceIpHashMethod>();
+    break;
+  case UdpProxyConfig::HashPolicy::PolicySpecifierCase::kSourceIpPort:
+    hash_impl_ = std::make_unique<SourceIpPortHashMethod>();
     break;
   case UdpProxyConfig::HashPolicy::PolicySpecifierCase::kKey:
     hash_impl_ = std::make_unique<KeyHashMethod>(hash_policies[0]->key());

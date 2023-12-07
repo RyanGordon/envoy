@@ -53,6 +53,15 @@ public:
   const Network::Address::InstanceConstSharedPtr pipe_address_;
 };
 
+class HashPolicyImplSourceIpPortTest : public HashPolicyImplBaseTest {
+public:
+  HashPolicyImplSourceIpPortTest() : pipe_address_(Network::Utility::resolveUrl("unix://test_pipe")) {}
+
+  void additionalSetup() override { hash_policy_config_->set_source_ip_port(true); }
+
+  const Network::Address::InstanceConstSharedPtr pipe_address_;
+};
+
 class HashPolicyImplKeyTest : public HashPolicyImplBaseTest {
 public:
   HashPolicyImplKeyTest() : key_("key") {}
@@ -79,6 +88,25 @@ TEST_F(HashPolicyImplSourceIpTest, SourceIpHash) {
 
 // Check that returns null hash in case of unix domain socket(pipe) type
 TEST_F(HashPolicyImplSourceIpTest, SourceIpWithUnixDomainSocketType) {
+  setup();
+
+  auto hash = hash_policy_->generateHash(*pipe_address_);
+
+  EXPECT_FALSE(hash.has_value());
+}
+
+// Check if generate correct hash
+TEST_F(HashPolicyImplSourceIpPortTest, SourceIpPortHash) {
+  setup();
+
+  auto generated_hash = HashUtil::xxHash64(peer_address_->asString());
+  auto hash = hash_policy_->generateHash(*peer_address_);
+
+  EXPECT_EQ(generated_hash, hash.value());
+}
+
+// Check that returns null hash in case of unix domain socket(pipe) type
+TEST_F(HashPolicyImplSourceIpPortTest, SourceIpPortWithUnixDomainSocketType) {
   setup();
 
   auto hash = hash_policy_->generateHash(*pipe_address_);

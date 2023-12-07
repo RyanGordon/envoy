@@ -1374,6 +1374,46 @@ matcher:
   EXPECT_EQ(nullptr, config_->hashPolicy());
 }
 
+// Make sure hash policy with source_ip_port is created.
+TEST_F(UdpProxyFilterTest, HashPolicyWithSourceIpPort) {
+  InSequence s;
+
+  setup(readConfig(R"EOF(
+stat_prefix: foo
+matcher:
+  on_no_match:
+    action:
+      name: route
+      typed_config:
+        '@type': type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.Route
+        cluster: fake_cluster
+hash_policies:
+- source_ip_port: true
+  )EOF"));
+
+  EXPECT_NE(nullptr, config_->hashPolicy());
+}
+
+// Make sure validation fails if source_ip_port is false.
+TEST_F(UdpProxyFilterTest, ValidateHashPolicyWithSourceIpPort) {
+  InSequence s;
+  auto config = R"EOF(
+stat_prefix: foo
+matcher:
+  on_no_match:
+    action:
+      name: route
+      typed_config:
+        '@type': type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.Route
+        cluster: fake_cluster
+hash_policies:
+- source_ip_port: false
+  )EOF";
+
+  EXPECT_THROW_WITH_REGEX(setup(readConfig(config)), EnvoyException,
+                          "caused by HashPolicyValidationError\\.SourceIp");
+}
+
 // Expect correct hash is created if hash_policy with source_ip is mentioned.
 TEST_F(UdpProxyFilterTest, HashWithSourceIp) {
   InSequence s;
@@ -1393,6 +1433,40 @@ hash_policies:
 
   auto host = createHost(upstream_address_);
   auto generated_hash = HashUtil::xxHash64("10.0.0.1");
+  EXPECT_CALL(factory_context_.server_factory_context_.cluster_manager_.thread_local_cluster_.lb_,
+              chooseHost(_))
+      .WillOnce(Invoke([host, generated_hash](
+                           Upstream::LoadBalancerContext* context) -> Upstream::HostConstSharedPtr {
+        auto hash = context->computeHashKey();
+        EXPECT_TRUE(hash.has_value());
+        EXPECT_EQ(generated_hash, hash.value());
+        return host;
+      }));
+  expectSessionCreate(upstream_address_);
+  test_sessions_[0].expectWriteToUpstream("hello", 0, nullptr, true);
+  recvDataFromDownstream("10.0.0.1:1000", "10.0.0.2:80", "hello");
+  test_sessions_[0].recvDataFromUpstream("world");
+}
+
+// Expect correct hash is created if hash_policy with source_ip_port is mentioned.
+TEST_F(UdpProxyFilterTest, HashWithSourceIpPort) {
+  InSequence s;
+
+  setup(readConfig(R"EOF(
+stat_prefix: foo
+matcher:
+  on_no_match:
+    action:
+      name: route
+      typed_config:
+        '@type': type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.Route
+        cluster: fake_cluster
+hash_policies:
+- source_ip_port: true
+  )EOF"));
+
+  auto host = createHost(upstream_address_);
+  auto generated_hash = HashUtil::xxHash64("10.0.0.1:1000");
   EXPECT_CALL(factory_context_.server_factory_context_.cluster_manager_.thread_local_cluster_.lb_,
               chooseHost(_))
       .WillOnce(Invoke([host, generated_hash](
